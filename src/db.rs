@@ -1,8 +1,9 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use actix_web::web;
 use arcstr::ArcStr;
 use redb::{Database, ReadableTable, TableDefinition};
+use tracing::info;
 
 use crate::{Result, error::Error};
 
@@ -78,4 +79,51 @@ pub async fn confirm_session_token(
         }
     })
     .await?
+}
+
+/// Confirm a session token, retrying if the session doesn't exist yet
+pub async fn confirm_token_retry(
+    session_name: ArcStr,
+    token: Option<ArcStr>,
+    db: web::Data<Database>,
+) -> Result<()> {
+    let mut retry_count = 0;
+    let max_retries = 5;
+    // Start with 100ms
+    let mut delay_ms = 100;
+    // Cap at 5 seconds
+    let max_delay_ms = 5000;
+
+    loop {
+        match confirm_session_token(session_name.clone(), token.clone(), db.clone()).await {
+            Ok(()) => {
+                // Authentication successful
+                return Ok(());
+            }
+            Err(Error::UnknownSession(session)) => {
+                // Session doesn't exist, retry with backoff
+                retry_count += 1;
+                if retry_count > max_retries {
+                    info!(
+                        "Giving up after {} retries for session [{session_name}]",
+                        max_retries
+                    );
+                    return Err(Error::UnknownSession(session));
+                }
+
+                info!(
+                    "Session [{session_name}] not found, retrying in {}ms (attempt {}/{})",
+                    delay_ms, retry_count, max_retries
+                );
+
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+
+                delay_ms = std::cmp::min(delay_ms * 2, max_delay_ms);
+            }
+            Err(err) => {
+                tracing::error!("Failed to confirm session token: {err}");
+                return Err(err);
+            }
+        }
+    }
 }

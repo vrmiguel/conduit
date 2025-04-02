@@ -6,6 +6,7 @@ use actix_web::{
 };
 use arcstr::ArcStr;
 use brige::{notify_sender, wait_for_receiver};
+use db::confirm_token_retry;
 use error::Error;
 use redb::Database;
 use serde::Deserialize;
@@ -47,11 +48,15 @@ async fn upload(
     info!("Sender [{session_name}]: session created");
 
     // Wait for client to connect, getting its bytes sender handle once connected
-    // TODO: add timeout
-    let bytes_sender = wait_for_receiver(session_name.clone()).await.map_err(|_| {
-        // Sender dropped before notifying
-        Error::SenderTimeout
-    })?;
+    let bytes_sender = tokio::time::timeout(
+        Duration::from_secs(5 * 60), // 5 minute timeout
+        wait_for_receiver(session_name.clone()),
+    )
+    .await
+    // Either timed out ..
+    .map_err(|_| Error::SenderTimeout)?
+    // .. or client disconnected
+    .map_err(|_| Error::ReceiverDisconnected)?;
 
     async fn transmit_payload(
         bytes_sender: mpsc::Sender<Result<Bytes>>,
@@ -76,53 +81,6 @@ async fn upload(
     info!("Sender [{session_name}] finished transmitting");
 
     Ok(HttpResponse::Ok().finish())
-}
-
-async fn confirm_token_retry(
-    session_name: ArcStr,
-    token: Option<ArcStr>,
-    db: web::Data<Database>,
-) -> Result<()> {
-    let mut retry_count = 0;
-    let max_retries = 5;
-    // Start with 100ms
-    let mut delay_ms = 100;
-    // Cap at 5 seconds
-    let max_delay_ms = 5000;
-
-    loop {
-        match db::confirm_session_token(session_name.clone(), token.clone(), db.clone()).await {
-            Ok(()) => {
-                // Authentication successful
-                return Ok(());
-            }
-            Err(Error::UnknownSession(session)) => {
-                // Session doesn't exist, retry with backoff
-                retry_count += 1;
-                if retry_count > max_retries {
-                    info!(
-                        "Giving up after {} retries for session [{session_name}]",
-                        max_retries
-                    );
-                    return Err(Error::UnknownSession(session));
-                }
-                tracing::info!("Session does not exist, retrying");
-
-                info!(
-                    "Session [{session_name}] not found, retrying in {}ms (attempt {}/{})",
-                    delay_ms, retry_count, max_retries
-                );
-
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-
-                delay_ms = std::cmp::min(delay_ms * 2, max_delay_ms);
-            }
-            Err(err) => {
-                tracing::error!("Failed to confirm session token: {err}");
-                return Err(err);
-            }
-        }
-    }
 }
 
 #[get("/{session_name}")]
