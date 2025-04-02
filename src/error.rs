@@ -6,15 +6,7 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Key-value store error: {0}")]
-    Kv(#[from] redb::DatabaseError),
-    #[error("Key-value transaction error: {0}")]
-    Transaction(#[from] redb::TransactionError),
-    #[error("Key-value table error: {0}")]
-    Table(#[from] redb::TableError),
-    #[error("Storage error: {0}")]
-    Storage(#[from] redb::StorageError),
-    #[error("Commit error: {0}")]
-    Commit(#[from] redb::CommitError),
+    Kv(String),
     #[error("Join error: {0}")]
     Join(#[from] actix_web::rt::task::JoinError),
     #[error("Session already exists")]
@@ -31,6 +23,36 @@ pub enum Error {
     BadConduit(String),
     #[error("Payload error: {0}")]
     Payload(#[from] actix_web::error::PayloadError),
+}
+
+impl From<redb::StorageError> for Error {
+    fn from(err: redb::StorageError) -> Self {
+        Error::Kv(err.to_string())
+    }
+}
+
+impl From<redb::DatabaseError> for Error {
+    fn from(err: redb::DatabaseError) -> Self {
+        Error::Kv(err.to_string())
+    }
+}
+
+impl From<redb::TableError> for Error {
+    fn from(err: redb::TableError) -> Self {
+        Error::Kv(err.to_string())
+    }
+}
+
+impl From<redb::CommitError> for Error {
+    fn from(err: redb::CommitError) -> Self {
+        Error::Kv(err.to_string())
+    }
+}
+
+impl From<redb::TransactionError> for Error {
+    fn from(err: redb::TransactionError) -> Self {
+        Error::Kv(err.to_string())
+    }
 }
 
 impl ResponseError for Error {
