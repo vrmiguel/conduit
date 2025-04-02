@@ -1,20 +1,12 @@
-use std::{path::Path, sync::LazyLock};
+use std::path::Path;
 
-use actix_web::web::{self, Bytes};
+use actix_web::web;
 use arcstr::ArcStr;
-use dashmap::DashMap;
 use redb::{Database, ReadableTable, TableDefinition};
 
 use crate::{Result, error::Error};
 
-use tokio::sync::{mpsc, oneshot};
-
-/// Used for the uploader to transmit bytes to the downloader
-pub type ByteSender = mpsc::Sender<Result<Bytes>>;
-
 const SESSIONS: TableDefinition<&str, Option<&str>> = TableDefinition::new("sessions");
-static WAITING_SENDERS: LazyLock<DashMap<ArcStr, oneshot::Sender<ByteSender>>> =
-    LazyLock::new(DashMap::new);
 
 pub fn init(path: impl AsRef<Path>) -> Result<Database> {
     let db = redb::Database::create(path)?;
@@ -27,35 +19,6 @@ pub fn init(path: impl AsRef<Path>) -> Result<Database> {
     write.commit()?;
 
     Ok(db)
-}
-
-/// Registers this sender as waiting for a receiver
-///
-/// Returns a handle to notify the sender when the receiver is available
-pub fn wait_for_receiver(session_name: ArcStr) -> oneshot::Receiver<ByteSender> {
-    let (sender, receiver) = oneshot::channel();
-    WAITING_SENDERS.insert(session_name, sender);
-
-    receiver
-}
-
-/// Registers this sender as waiting for a receiver
-///
-/// Returns a handle to notify the sender when the receiver is available
-pub fn notify_sender(session_name: ArcStr, bytes_sender: ByteSender) -> Result<()> {
-    let sender = WAITING_SENDERS
-        .remove(&*session_name)
-        .map(|(_session_name, sender)| sender)
-        .ok_or_else(|| Error::BadConduit(format!(
-            "No WAITING_SENDER for {session_name} even though confirm_session_token was Ok(true)",
-        )))?;
-
-    sender.send(bytes_sender).map_err(|_| {
-        // Relies that a timed-out sender has been removed from WAITING_SENDERS
-        Error::BadConduit(format!(
-            "Receiver for {session_name} has dropped by the time of `send`"
-        ))
-    })
 }
 
 pub async fn create_session(

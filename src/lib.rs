@@ -5,7 +5,7 @@ use actix_web::{
     web::{self, Bytes},
 };
 use arcstr::ArcStr;
-use db::{notify_sender, wait_for_receiver};
+use brige::{notify_sender, wait_for_receiver};
 use error::Error;
 use redb::Database;
 use serde::Deserialize;
@@ -13,9 +13,14 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-pub mod db;
+/// Connects the senders to their receivers
+mod brige;
+/// Key-value store
+mod db;
+/// Error handling
 mod error;
 
+pub use db::init as init_db;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Optional token

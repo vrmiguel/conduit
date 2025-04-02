@@ -26,7 +26,7 @@ fn test_server() -> anyhow::Result<TestServer> {
         .path()
         .join(format!("{}.redb", generate_random_name(4)));
 
-    let db = conduit::db::init(temp)?;
+    let db = conduit::init_db(temp)?;
     let conn = web::Data::new(db);
 
     let serv = actix_test::start(move || {
