@@ -9,6 +9,7 @@ use redb::Database;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
+use tracing::info;
 
 mod db;
 mod error;
@@ -28,15 +29,19 @@ async fn upload(
     db: web::Data<Database>,
     payload: web::Payload,
 ) -> Result<HttpResponse> {
+    info!("Sender [{session_name}] connected");
+
     let session_name = session_name.into_inner();
     let token = param.into_inner().token;
 
     // Write down session
     db::create_session(session_name.clone(), token, db).await?;
 
+    info!("Sender [{session_name}] connected");
+
     // Wait for client to connect, getting its bytes sender handle once connected
     // TODO: add timeout
-    let bytes_sender = wait_for_receiver(session_name).await.map_err(|_| {
+    let bytes_sender = wait_for_receiver(session_name.clone()).await.map_err(|_| {
         // Sender dropped before notifying
         Error::SenderTimeout
     })?;
@@ -54,10 +59,14 @@ async fn upload(
         Ok(())
     }
 
+    info!("Sender [{session_name}] to start transmitting");
     transmit_payload(bytes_sender, payload).await?;
 
     // TODO: ensure no WAITING_SENDER left for this session
+    // TODO: cleanup in general
     debug_assert!(true);
+
+    info!("Sender [{session_name}] finished transmitting");
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -68,6 +77,7 @@ async fn download(
     param: web::Query<TokenParam>,
     db: web::Data<Database>,
 ) -> Result<HttpResponse> {
+    info!("Receiver [{session_name}] connected");
     let session_name = session_name.into_inner();
 
     match db::confirm_session_token(session_name.clone(), param.into_inner().token, db).await {
@@ -79,20 +89,25 @@ async fn download(
         Err(err) => return Err(err),
     }
 
+    info!("Receiver [{session_name}] authenticated");
+
     let (sender, receiver) = mpsc::channel::<Result<Bytes>>(8);
 
     // If this succeeds, both sender and receiver are connected
-    notify_sender(session_name, sender)?;
+    notify_sender(session_name.clone(), sender)?;
+
+    info!("Receiver [{session_name}] matched with sender, starting streaming");
 
     let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
 
-    // Return a streaming response
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
         .streaming(stream))
 }
 
 pub async fn run_server() -> Result<()> {
+    tracing_subscriber::fmt().compact().init();
+
     let db = redb::Database::create("my_db.redb")?;
 
     let conn = web::Data::new(db);
