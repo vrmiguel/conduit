@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{path::Path, sync::LazyLock};
 
 use actix_web::web::{self, Bytes};
 use arcstr::ArcStr;
@@ -15,6 +15,19 @@ pub type ByteSender = mpsc::Sender<Result<Bytes>>;
 const SESSIONS: TableDefinition<&str, Option<&str>> = TableDefinition::new("sessions");
 static WAITING_SENDERS: LazyLock<DashMap<ArcStr, oneshot::Sender<ByteSender>>> =
     LazyLock::new(DashMap::new);
+
+pub fn init(path: impl AsRef<Path>) -> Result<Database> {
+    let db = redb::Database::create(path)?;
+
+    let write = db.begin_write()?;
+
+    // Some write has to occur to every defined redb table
+    write.open_table(SESSIONS)?;
+
+    write.commit()?;
+
+    Ok(db)
+}
 
 /// Registers this sender as waiting for a receiver
 ///
@@ -37,11 +50,11 @@ pub fn notify_sender(session_name: ArcStr, bytes_sender: ByteSender) -> Result<(
             "No WAITING_SENDER for {session_name} even though confirm_session_token was Ok(true)",
         )))?;
 
-    sender.send(bytes_sender).or_else(|_| {
+    sender.send(bytes_sender).map_err(|_| {
         // Relies that a timed-out sender has been removed from WAITING_SENDERS
-        Err(Error::BadConduit(format!(
+        Error::BadConduit(format!(
             "Receiver for {session_name} has dropped by the time of `send`"
-        )))
+        ))
     })
 }
 

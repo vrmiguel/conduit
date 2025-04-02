@@ -37,6 +37,7 @@ impl ResponseError for Error {
     fn status_code(&self) -> actix_web::http::StatusCode {
         match self {
             Error::FailedAuthSession => StatusCode::UNAUTHORIZED,
+            Error::UnknownSession(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
