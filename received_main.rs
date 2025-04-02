@@ -92,7 +92,12 @@ async fn download(
         .streaming(stream))
 }
 
-pub async fn run_server() -> Result<()> {
+#[actix_web::main]
+async fn main() -> Result<()> {
+    actix_web::rt::spawn(async move {
+        //
+    });
+
     let db = redb::Database::create("my_db.redb")?;
 
     let conn = web::Data::new(db);
@@ -110,9 +115,4 @@ pub async fn run_server() -> Result<()> {
     .await?;
 
     Ok(())
-}
-
-#[actix_web::main]
-async fn main() -> Result<()> {
-    run_server().await
 }
