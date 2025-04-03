@@ -1,7 +1,7 @@
-use std::time::Duration;
+use std::{net::ToSocketAddrs, path::Path, time::Duration};
 
 use actix_web::{
-    App, HttpResponse, HttpServer, get, post,
+    App, HttpResponse, HttpServer, get, put,
     web::{self, Bytes},
 };
 use arcstr::ArcStr;
@@ -30,7 +30,7 @@ struct TokenParam {
     token: Option<ArcStr>,
 }
 
-#[post("/{session_name}")]
+#[put("/{session_name}")]
 async fn upload(
     session_name: web::Path<ArcStr>,
     param: web::Query<TokenParam>,
@@ -100,7 +100,7 @@ async fn download(
 
     info!("Receiver [{session_name}] authenticated");
 
-    let (sender, receiver) = mpsc::channel::<Result<Bytes>>(8);
+    let (sender, receiver) = mpsc::channel::<Result<Bytes>>(128);
 
     // If this succeeds, both sender and receiver are connected
     notify_sender(session_name.clone(), sender)?;
@@ -114,12 +114,14 @@ async fn download(
         .streaming(stream))
 }
 
-pub async fn run_server() -> Result<()> {
+pub async fn run_server(addr: impl ToSocketAddrs, db_path: impl AsRef<Path>) -> Result<()> {
     tracing_subscriber::fmt().compact().init();
 
-    let db = db::init("my_db.redb")?;
+    let db = db::init(db_path)?;
 
     let conn = web::Data::new(db);
+
+    info!("Server starting in 127.0.0.1:8080");
 
     HttpServer::new(move || {
         App::new()
@@ -129,7 +131,7 @@ pub async fn run_server() -> Result<()> {
             })
             .app_data(conn.clone())
     })
-    .bind("127.0.0.1:8080")?
+    .bind(addr)?
     .run()
     .await?;
 

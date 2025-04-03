@@ -1,4 +1,4 @@
-FROM rust:1.82-alpine as builder
+FROM rust:1.85-alpine as builder
 
 RUN apk update && apk add --no-cache musl-dev openssl-dev gcc git openssl-libs-static linux-headers build-base
 

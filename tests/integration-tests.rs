@@ -108,25 +108,20 @@ async fn run_transfer_test(
 ) -> anyhow::Result<()> {
     const RESPONSE_LIMIT: usize = 50 * 1024 * 1024;
 
-    // Generate a session name for the transfer
     let session_name = generate_random_name(8);
     let output_file = TEMP_DIR
         .path()
         .join(format!("received_{}.bin", generate_random_name(8)));
 
-    // Calculate original file hash
     let original_hash = calculate_md5(input_file);
 
-    // Read file content once to avoid multiple reads
     let file_content = fs::read(input_file).expect("Failed to read test file");
 
-    // Create URL with optional token
     let mut url = format!("/{}", session_name);
     if let Some(t) = token {
         url = format!("{}?token={}", url, t);
     }
 
-    // Define sender task (as a future, not spawned)
     let sender_future = async {
         if sender_first {
             // No delay
@@ -134,13 +129,11 @@ async fn run_transfer_test(
             sleep(Duration::from_millis(200)).await;
         }
 
-        // Create a stream from the file content with reasonable chunk size
         let chunk_size = 64 * 1024; // 64KB chunks for streaming
         let content_stream = bytes_to_stream(file_content, chunk_size);
 
-        // Send the file (upload) using streaming
         let upload_resp = server
-            .post(&url)
+            .put(&url)
             .send_stream(content_stream)
             .await
             .expect("Failed to execute upload request");
@@ -339,7 +332,7 @@ async fn test_invalid_token() -> anyhow::Result<()> {
         let content_stream = bytes_to_stream(file_content.clone(), chunk_size);
 
         let upload_resp = server
-            .post(&upload_url)
+            .put(&upload_url)
             .send_stream(content_stream)
             .await
             .expect("Failed to execute upload request");

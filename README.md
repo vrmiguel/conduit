@@ -44,7 +44,7 @@ curl https://conduit.vrmiguel.org/my-protected-vacation-photos?token=no-prying-e
 
 ### Initiate a File Upload Session
 ```
-POST /{session_name}
+PUT /{session_name}
 ```
 **Parameters:**
 - `session_name`: A unique identifier (8-30 ASCII characters)

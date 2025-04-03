@@ -92,7 +92,7 @@ def sender(base_url, session_name, file_path, token=None, delay=0):
     try:
         with open(file_path, 'rb') as f:
             start_time = time.time()
-            response = requests.post(url, data=f, stream=True)
+            response = requests.put(url, data=f, stream=True)
             elapsed = time.time() - start_time
 
             if response.status_code == 200:
