@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 actix-web = "4.10.2"
-arcstr = { version = "1.2.0", features = ["serde"] }
 dashmap = "6.1.0"
 redb = "2.4.0"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -21,5 +20,6 @@ anyhow = "1.0.97"
 fastrand = "2.3.0"
 futures = "0.3.31"
 md5 = "0.7.0"
+serde_plain = "1.0.2"
 tempfile = "3.19.1"
 tokio = { version = "1.44.1", features = ["sync", "macros"] }

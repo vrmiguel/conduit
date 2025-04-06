@@ -1,11 +1,10 @@
 use std::{path::Path, time::Duration};
 
 use actix_web::web;
-use arcstr::ArcStr;
 use redb::{Database, ReadableTable, TableDefinition};
 use tracing::info;
 
-use crate::{Result, error::Error};
+use crate::{Result, SessionName, Token, error::Error};
 
 const SESSIONS: TableDefinition<&str, Option<&str>> = TableDefinition::new("sessions");
 
@@ -23,8 +22,8 @@ pub fn init(path: impl AsRef<Path>) -> Result<Database> {
 }
 
 pub async fn create_session(
-    session_name: ArcStr,
-    token: Option<ArcStr>,
+    session_name: SessionName,
+    token: Option<Token>,
     db: web::Data<Database>,
 ) -> Result<()> {
     actix_web::rt::task::spawn_blocking(move || {
@@ -32,11 +31,11 @@ pub async fn create_session(
 
         let mut table = write.open_table(SESSIONS)?;
 
-        if table.get(&*session_name)?.is_some() {
+        if table.get(session_name.as_str())?.is_some() {
             return Err(Error::SessionExists);
         }
 
-        table.insert(&*session_name, token.as_deref())?;
+        table.insert(session_name.as_str(), token.as_deref())?;
 
         drop(table);
         write.commit()?;
@@ -48,8 +47,8 @@ pub async fn create_session(
 
 /// Checks if the given token matches the session token
 pub async fn confirm_session_token(
-    session_name: ArcStr,
-    token: Option<ArcStr>,
+    session_name: SessionName,
+    token: Option<Token>,
     db: web::Data<Database>,
 ) -> Result<()> {
     actix_web::rt::task::spawn_blocking(move || {
@@ -83,8 +82,8 @@ pub async fn confirm_session_token(
 
 /// Confirm a session token, retrying if the session doesn't exist yet
 pub async fn confirm_token_retry(
-    session_name: ArcStr,
-    token: Option<ArcStr>,
+    session_name: SessionName,
+    token: Option<Token>,
     db: web::Data<Database>,
 ) -> Result<()> {
     let mut retry_count = 0;

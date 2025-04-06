@@ -1,5 +1,6 @@
 use actix_web::{ResponseError, http::StatusCode};
-use arcstr::ArcStr;
+
+use crate::SessionName;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -12,7 +13,7 @@ pub enum Error {
     #[error("Session already exists")]
     SessionExists,
     #[error("Unknown session {0}")]
-    UnknownSession(ArcStr),
+    UnknownSession(SessionName),
     #[error("Failed session authentication")]
     FailedAuthSession,
     #[error("Timeout waiting for client connection")]
@@ -23,6 +24,10 @@ pub enum Error {
     BadConduit(String),
     #[error("Payload error: {0}")]
     Payload(#[from] actix_web::error::PayloadError),
+    #[error("Session names must have a minimum length of 10")]
+    MinimumSessionLength,
+    #[error("Tokens must have a minimum length of 8")]
+    TokenLength,
 }
 
 impl From<redb::StorageError> for Error {

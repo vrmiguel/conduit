@@ -54,7 +54,7 @@ fn calculate_md5(file_path: &Path) -> String {
 
 // Helper function to generate a test file with specific pattern and size
 fn generate_test_file(dir: &Path, size_mb: usize, pattern: &str) -> std::path::PathBuf {
-    let file_path = dir.join(format!("test_{}.bin", generate_random_name(8)));
+    let file_path = dir.join(format!("test_{}.bin", generate_random_name(10)));
     let mut file = File::create(&file_path).expect("Failed to create test file");
 
     let total_bytes = size_mb * 1024 * 1024;
@@ -108,10 +108,10 @@ async fn run_transfer_test(
 ) -> anyhow::Result<()> {
     const RESPONSE_LIMIT: usize = 50 * 1024 * 1024;
 
-    let session_name = generate_random_name(8);
+    let session_name = generate_random_name(10);
     let output_file = TEMP_DIR
         .path()
-        .join(format!("received_{}.bin", generate_random_name(8)));
+        .join(format!("received_{}.bin", generate_random_name(10)));
 
     let original_hash = calculate_md5(input_file);
 
@@ -281,7 +281,7 @@ async fn test_transfer_error_timeout() -> anyhow::Result<()> {
     let server = test_server()?;
 
     // Generate a session name for the transfer
-    let session_name = generate_random_name(8);
+    let session_name = generate_random_name(10);
 
     let download_fut = async {
         match tokio::time::timeout(
@@ -317,7 +317,7 @@ async fn test_invalid_token() -> anyhow::Result<()> {
     let server = test_server()?;
 
     // Generate a session name for the transfer
-    let session_name = generate_random_name(8);
+    let session_name = generate_random_name(10);
     let input_file = generate_test_file(TEMP_DIR.path(), 1, "random");
     let file_content = fs::read(&input_file).expect("Failed to read test file");
 

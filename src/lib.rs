@@ -4,12 +4,12 @@ use actix_web::{
     App, HttpResponse, HttpServer, get, put,
     web::{self, Bytes},
 };
-use arcstr::ArcStr;
 use brige::{notify_sender, wait_for_receiver};
 use db::confirm_token_retry;
 use error::Error;
 use redb::Database;
 use serde::Deserialize;
+use small_string::SmallString;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tracing::info;
@@ -21,18 +21,23 @@ mod db;
 /// Error handling
 mod error;
 
+mod small_string;
+
 pub use db::init as init_db;
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub type SessionName = SmallString<10, 30>;
+pub type Token = SmallString<8, 30>;
 
 /// Optional token
 #[derive(Deserialize)]
 struct TokenParam {
-    token: Option<ArcStr>,
+    token: Option<Token>,
 }
 
 #[put("/{session_name}")]
 async fn upload(
-    session_name: web::Path<ArcStr>,
+    session_name: web::Path<SessionName>,
     param: web::Query<TokenParam>,
     db: web::Data<Database>,
     payload: web::Payload,
@@ -85,7 +90,7 @@ async fn upload(
 
 #[get("/{session_name}")]
 async fn download(
-    session_name: web::Path<ArcStr>,
+    session_name: web::Path<SessionName>,
     param: web::Query<TokenParam>,
     db: web::Data<Database>,
 ) -> Result<HttpResponse> {
