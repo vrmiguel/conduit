@@ -72,6 +72,10 @@ impl<const MIN: usize, const MAX: usize> SmallString<MIN, MAX> {
     const INIT: [MaybeUninit<u8>; MAX] = [Self::ELEM; MAX];
 
     pub fn new() -> Self {
+        // Validate that our design constraints are met
+        assert!(MAX <= u8::MAX as usize, "MAX must be <= 255 to fit in u8::len");
+        assert!(MIN <= MAX, "MIN must be <= MAX");
+
         Self {
             len: 0,
             buf: Self::INIT,
@@ -83,11 +87,21 @@ impl<const MIN: usize, const MAX: usize> SmallString<MIN, MAX> {
     }
 
     pub fn extend(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        // Check if there's enough space to hold all bytes
         if self.length() + bytes.len() > self.capacity() {
             return Err(Error::NotEnoughCapacity);
         }
 
+        // Make sure we don't overflow u8 storage for len
+        if self.length() + bytes.len() > u8::MAX as usize {
+            return Err(Error::NotEnoughCapacity);
+        }
+
+        // SAFETY: We've verified there's enough space for all bytes,
+        // and that we won't overflow the len field, so it's safe to push each byte
         for &byte in bytes {
+            // We've already checked capacity at the function level,
+            // so we can use push_unchecked safely here
             unsafe { self.push_unchecked(byte) }
         }
 
@@ -96,27 +110,70 @@ impl<const MIN: usize, const MAX: usize> SmallString<MIN, MAX> {
 
     /// ```
     pub fn as_slice(&self) -> &[u8] {
-        // NOTE(unsafe) avoid bound checks in the slicing operation
-        // &buffer[..self.len]
+        // SAFETY:
+        // 1. We ensure that self.len never exceeds MAX (enforced in push/extend)
+        // 2. We only write initialized bytes in push_unchecked and extend
+        // 3. Only the first self.len bytes are initialized and valid
+        // 4. The buffer pointer is valid and aligned as it's from a valid array
+        if self.length() > self.capacity() {
+            // This should never happen, but we check to be extra safe
+            panic!("SmallString length exceeds capacity (corrupted state detected)");
+        }
         unsafe { slice::from_raw_parts(self.buf.as_ptr() as *const u8, self.length()) }
     }
 
     #[inline]
     pub fn as_str(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(self.as_slice()) }
+        // SAFETY:
+        // We ensure UTF-8 validity because:
+        // 1. All input comes from &str which is already valid UTF-8
+        // 2. We only add bytes through push_str which takes &str
+        //    or through extend/push_unchecked which are called in controlled ways
+        match std::str::from_utf8(self.as_slice()) {
+            Ok(s) => s,
+            Err(_) => {
+                // This should never happen if used correctly, but we check to be extra safe
+                panic!("SmallString contains invalid UTF-8 (corrupted state detected)");
+            }
+        }
     }
 
     /// # Safety: caller must ensure there's enough capacity
     #[inline]
     pub unsafe fn push_unchecked(&mut self, byte: u8) {
-        debug_assert!(!self.is_full());
+        // We used to just debug_assert, but now we check in all builds
+        // for maximum safety, since this is a critical unsafe operation
+        if self.is_full() {
+            panic!("Called push_unchecked on a full SmallString");
+        }
 
         let current_pos = self.length();
+
+        // SAFETY:
+        // 1. We verified above that we're not full, so current_pos < MAX
+        // 2. The buf array has MAX elements, so this index is in bounds
+        // 3. We have &mut self, so we have exclusive access to the buffer
         unsafe {
             *self.buf.get_unchecked_mut(current_pos) = MaybeUninit::new(byte);
         }
 
+        // Ensure we don't overflow the len field
+        if current_pos == u8::MAX as usize {
+            panic!("SmallString length would overflow u8 storage");
+        }
+
         self.len += 1;
+    }
+
+    /// Safe version of push_unchecked that returns an error when capacity is exceeded
+    pub fn push(&mut self, byte: u8) -> Result<(), Error> {
+        if self.is_full() {
+            return Err(Error::NotEnoughCapacity);
+        }
+
+        // SAFETY: We just checked that we're not full, so it's safe to call push_unchecked
+        unsafe { self.push_unchecked(byte); }
+        Ok(())
     }
 
     #[inline]
@@ -132,6 +189,24 @@ impl<const MIN: usize, const MAX: usize> SmallString<MIN, MAX> {
     #[inline]
     pub fn capacity(&self) -> usize {
         MAX
+    }
+
+    /// Checks if the internal state maintains all invariants.
+    /// This is useful for debugging and could be called in critical sections
+    /// to ensure data integrity.
+    #[inline]
+    pub fn check_invariants(&self) -> bool {
+        // Check that length is valid
+        if self.len as usize > MAX {
+            return false;
+        }
+
+        // Check that the content is valid UTF-8
+        if let Err(_) = std::str::from_utf8(self.as_slice()) {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -159,9 +234,19 @@ impl<'de, const MIN: usize, const MAX: usize> Deserialize<'de> for SmallString<M
                 if v.len() < MIN {
                     return Err(E::invalid_length(v.len(), &self));
                 }
+
+                // Check if the string would exceed our MAX capacity
+                if v.len() > MAX {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+
                 let mut s = SmallString::new();
                 s.push_str(v)
                     .map_err(|_| E::invalid_length(v.len(), &self))?;
+
+                // Double-check that our invariants are maintained
+                debug_assert!(s.check_invariants(), "SmallString invariants violated after deserialization");
+
                 Ok(s)
             }
 
@@ -172,13 +257,17 @@ impl<'de, const MIN: usize, const MAX: usize> Deserialize<'de> for SmallString<M
                 if v.len() < MIN {
                     return Err(E::invalid_length(v.len(), &self));
                 }
-                let mut s = SmallString::new();
 
-                s.push_str(
-                    std::str::from_utf8(v)
-                        .map_err(|_| E::invalid_value(de::Unexpected::Bytes(v), &self))?,
-                )
-                .map_err(|_| E::invalid_length(v.len(), &self))?;
+                // Explicitly validate that the bytes are valid UTF-8 before converting
+                let s_str = std::str::from_utf8(v)
+                    .map_err(|_| E::invalid_value(de::Unexpected::Bytes(v), &self))?;
+
+                let mut s = SmallString::new();
+                s.push_str(s_str)
+                    .map_err(|_| E::invalid_length(v.len(), &self))?;
+
+                // Double-check that our invariants are maintained
+                debug_assert!(s.check_invariants(), "SmallString invariants violated after deserialization");
 
                 Ok(s)
             }
@@ -202,6 +291,47 @@ mod tests {
         // Test valid minimum length
         let result: Result<SmallString<5, 20>, _> = serde_plain::from_str("abcde");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_safe_push() {
+        let mut small_string = SmallString::<5, 10>::new();
+
+        // Test push method works
+        for b in "hello".bytes() {
+            assert!(small_string.push(b).is_ok());
+        }
+        assert_eq!(small_string.as_str(), "hello");
+
+        // Add more until full
+        for b in " world".bytes().take(5) {
+            assert!(small_string.push(b).is_ok());
+        }
+
+        // Now it should be full
+        assert!(small_string.is_full());
+
+        // Next push should fail
+        assert!(matches!(small_string.push(b'!'), Err(Error::NotEnoughCapacity)));
+    }
+
+    #[test]
+    fn test_check_invariants() {
+        let mut small_string = SmallString::<5, 10>::new();
+        small_string.push_str("hello").unwrap();
+
+        // Check that invariants hold
+        assert!(small_string.check_invariants());
+
+        // Artificially create an invalid state to test invariant check
+        // This is only for testing - real code should never do this
+        unsafe {
+            let ptr = &mut small_string.len as *mut u8;
+            *ptr = 255; // Invalid length
+        }
+
+        // Invariants should fail now
+        assert!(!small_string.check_invariants());
     }
 
     #[test]
