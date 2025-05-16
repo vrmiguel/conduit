@@ -4,7 +4,7 @@ use actix_web::web;
 use redb::{Database, ReadableTable, TableDefinition};
 use tracing::info;
 
-use crate::{Result, SessionName, Token, error::Error};
+use crate::{Result, SessionName, Token, error::Error, token};
 
 const SESSIONS: TableDefinition<&str, Option<&str>> = TableDefinition::new("sessions");
 
@@ -23,9 +23,14 @@ pub fn init(path: impl AsRef<Path>) -> Result<Database> {
 
 pub async fn create_session(
     session_name: SessionName,
-    token: Option<Token>,
+    token_opt: Option<Token>,
     db: web::Data<Database>,
 ) -> Result<()> {
+    // Validate token if provided
+    if let Some(ref token) = token_opt {
+        token::validate_token(token)?;
+    }
+
     actix_web::rt::task::spawn_blocking(move || {
         let write = db.begin_write()?;
 
@@ -35,7 +40,19 @@ pub async fn create_session(
             return Err(Error::SessionExists);
         }
 
-        table.insert(session_name.as_str(), token.as_deref())?;
+        // Hash the token if it exists
+        let hashed_token = if let Some(token) = token_opt {
+            // Use our token hashing function
+            Some(token::hash_token(token.as_str())?)
+        } else {
+            None
+        };
+
+        // Store the hashed token
+        table.insert(
+            session_name.as_str(),
+            hashed_token.as_deref().map(|s| s.as_str())
+        )?;
 
         drop(table);
         write.commit()?;
@@ -51,13 +68,33 @@ pub async fn confirm_session_token(
     token: Option<Token>,
     db: web::Data<Database>,
 ) -> Result<()> {
+    // First, check if we're being rate limited
+    token::check_rate_limit(session_name.as_str())?;
+
     actix_web::rt::task::spawn_blocking(move || {
         let read = db.begin_read()?;
-
         let table = read.open_table(SESSIONS)?;
 
         let authenticated = match table.get(&*session_name)? {
-            Some(expected_token) => token.as_deref() == expected_token.value(),
+            Some(stored_hash) => {
+                // If a token was required but not provided
+                if stored_hash.value().is_some() && token.is_none() {
+                    false
+                } else if let (Some(stored), Some(provided)) = (stored_hash.value(), token.as_deref()) {
+                    // Verify the provided token against the stored hash
+                    match token::verify_token(provided, stored) {
+                        Ok(true) => true,
+                        Ok(false) => false,
+                        Err(e) => {
+                            tracing::error!("Token verification error: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    // No token was required, and none was provided
+                    stored_hash.value().is_none() && token.is_none()
+                }
+            },
             None => return Err(Error::UnknownSession(session_name)),
         };
 
@@ -74,6 +111,8 @@ pub async fn confirm_session_token(
 
             Ok(())
         } else {
+            // Record the failed attempt for rate limiting
+            token::record_failed_attempt(session_name.as_str());
             Err(Error::FailedAuthSession)
         }
     })

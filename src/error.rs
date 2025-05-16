@@ -26,8 +26,14 @@ pub enum Error {
     Payload(#[from] actix_web::error::PayloadError),
     #[error("Session names must have a minimum length of 10")]
     MinimumSessionLength,
-    #[error("Tokens must have a minimum length of 8")]
+    #[error("Tokens must have a minimum length of 12")]
     TokenLength,
+    #[error("Token does not meet security requirements")]
+    WeakToken,
+    #[error("Too many failed authentication attempts")]
+    RateLimited,
+    #[error("Token validation error: {0}")]
+    TokenValidation(String),
 }
 
 impl From<redb::StorageError> for Error {
@@ -64,6 +70,10 @@ impl ResponseError for Error {
     fn status_code(&self) -> actix_web::http::StatusCode {
         match self {
             Error::FailedAuthSession => StatusCode::UNAUTHORIZED,
+            Error::WeakToken => StatusCode::BAD_REQUEST,
+            Error::TokenLength => StatusCode::BAD_REQUEST,
+            Error::TokenValidation(_) => StatusCode::BAD_REQUEST,
+            Error::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Error::UnknownSession(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }

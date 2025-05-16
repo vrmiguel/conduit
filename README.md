@@ -19,7 +19,7 @@ Conduit is a lightweight file transfer service that streams files directly betwe
 curl -T file.zip https://conduit.vrmiguel.org/my-vacation-photos
 
 # Transfer with password protection
-curl -T file.zip https://conduit.vrmiguel.org/my-protected-vacation-photos?token=no-prying-eyes
+curl -T file.zip https://conduit.vrmiguel.org/my-protected-vacation-photos?token=P@ssw0rd_S3cur3!X9z
 ```
 
 ### Receiving a file
@@ -28,7 +28,7 @@ curl -T file.zip https://conduit.vrmiguel.org/my-protected-vacation-photos?token
 curl https://conduit.vrmiguel.org/vacation-photos -o file.zip
 
 # Download a protected file (must provide the same token)
-curl https://conduit.vrmiguel.org/my-protected-vacation-photos?token=no-prying-eyes -o file.zip
+curl https://conduit.vrmiguel.org/my-protected-vacation-photos?token=P@ssw0rd_S3cur3!X9z -o file.zip
 ```
 
 ## How It Works
@@ -47,8 +47,8 @@ curl https://conduit.vrmiguel.org/my-protected-vacation-photos?token=no-prying-e
 PUT /{session_name}
 ```
 **Parameters:**
-- `session_name`: A unique identifier (8-30 ASCII characters)
-- `token` (optional): Security token (10-30 ASCII characters)
+- `session_name`: A unique identifier (10-30 ASCII characters)
+- `token` (optional): Security token (12-64 ASCII characters, must include uppercase, lowercase, numbers, and special characters)
 
 **Behavior:**
 - The connection remains open, waiting for a recipient
@@ -78,10 +78,27 @@ GET /{session_name}
 - `403 Forbidden`: Incorrect token
 
 ## Security Considerations
+
+### Transport Security
 - Files are encrypted in transit when using HTTPS (which is the default for conduit.vrmiguel.org)
 - However, files are not end-to-end encrypted - the server briefly processes unencrypted data in its buffer
-- Token protection is simple and should not be considered high security
 - Consider encrypting sensitive files before transfer for true end-to-end security
+
+### Token Protection
+Conduit provides enhanced token protection with the following security measures:
+- Tokens are securely hashed using Argon2 (an industry-standard password hashing algorithm)
+- Minimum token length of 12 characters required
+- Tokens must contain a mix of uppercase, lowercase, numbers, and special characters
+- Rate limiting protection against brute force attempts
+- Tokens are never stored in plain text
+
+### Security Limitations
+- The token is still transmitted as a URL parameter, which may be logged by proxies or client software
+- For highest security, consider additional measures:
+  - Use a secure channel to communicate the token separately from the session name
+  - Use unique, random session names that are difficult to guess
+  - Encrypt sensitive files before transmission
+  - Use conduit only within trusted networks when transferring sensitive data
 
 ## Limitations
 - No resume capability for interrupted transfers

@@ -20,14 +20,16 @@ mod brige;
 mod db;
 /// Error handling
 mod error;
-
+/// Token security
+mod token;
+/// String utility
 mod small_string;
 
 pub use db::init as init_db;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub type SessionName = SmallString<10, 30>;
-pub type Token = SmallString<8, 30>;
+pub type Token = SmallString<12, 64>;
 
 /// Optional token
 #[derive(Deserialize)]
