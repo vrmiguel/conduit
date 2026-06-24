@@ -1,6 +1,6 @@
 use actix_test::TestServer;
+use actix_web::App;
 use actix_web::web::Bytes;
-use actix_web::{App, web};
 use conduit::{download, upload};
 use futures::future::join;
 use futures::stream::{self, Stream};
@@ -22,20 +22,11 @@ fn test_server() -> anyhow::Result<TestServer> {
         tracing_subscriber::fmt().compact().init();
     });
 
-    let temp = TEMP_DIR
-        .path()
-        .join(format!("{}.redb", generate_random_name(4)));
-
-    let db = conduit::init_db(temp)?;
-    let conn = web::Data::new(db);
-
     let serv = actix_test::start(move || {
-        App::new()
-            .configure(|cfg| {
-                cfg.service(upload);
-                cfg.service(download);
-            })
-            .app_data(conn.clone())
+        App::new().configure(|cfg| {
+            cfg.service(upload);
+            cfg.service(download);
+        })
     });
 
     Ok(serv)

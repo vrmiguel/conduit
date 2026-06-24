@@ -6,8 +6,6 @@ use crate::SessionName;
 pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Key-value store error: {0}")]
-    Kv(String),
     #[error("Join error: {0}")]
     Join(#[from] actix_web::rt::task::JoinError),
     #[error("Session already exists")]
@@ -28,36 +26,6 @@ pub enum Error {
     MinimumSessionLength,
     #[error("Tokens must have a minimum length of 8")]
     TokenLength,
-}
-
-impl From<redb::StorageError> for Error {
-    fn from(err: redb::StorageError) -> Self {
-        Error::Kv(err.to_string())
-    }
-}
-
-impl From<redb::DatabaseError> for Error {
-    fn from(err: redb::DatabaseError) -> Self {
-        Error::Kv(err.to_string())
-    }
-}
-
-impl From<redb::TableError> for Error {
-    fn from(err: redb::TableError) -> Self {
-        Error::Kv(err.to_string())
-    }
-}
-
-impl From<redb::CommitError> for Error {
-    fn from(err: redb::CommitError) -> Self {
-        Error::Kv(err.to_string())
-    }
-}
-
-impl From<redb::TransactionError> for Error {
-    fn from(err: redb::TransactionError) -> Self {
-        Error::Kv(err.to_string())
-    }
 }
 
 impl ResponseError for Error {

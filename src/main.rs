@@ -6,5 +6,5 @@ use conduit::{Result, run_server};
 async fn main() -> Result<()> {
     let addr = Ipv4Addr::new(0, 0, 0, 0);
 
-    run_server((addr, 8080), "./redb").await
+    run_server((addr, 8080)).await
 }
